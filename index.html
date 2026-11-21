@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>لوحة إدارة مخزني</title>
+<style>
+:root{--bg:#F5F3EE;--card:#fff;--ink:#1d1d1b;--mute:#6b6a66;--line:#e2ded5;--accent:#1F6F5C;--accent-ink:#fff;--warn:#B26A00;--bad:#A63326;--ok:#1F6F5C}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161715;--card:#202220;--ink:#eceae4;--mute:#9a988f;--line:#33352f;--accent:#4DB89C;--accent-ink:#10251f;--warn:#E0A040;--bad:#E77A6C;--ok:#4DB89C}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,"Segoe UI",Tahoma,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:1.3rem;margin:8px 0 16px}
+h2{font-size:1.05rem;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+label{display:block;font-size:.88rem;color:var(--mute);margin:10px 0 4px}
+input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);font:inherit}
+input[dir=ltr]{text-align:left}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+button{font:inherit;padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+button.p{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.d{color:var(--bad);border-color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+@media (max-width:520px){.grid{grid-template-columns:1fr}}
+.shop{border-top:1px solid var(--line);padding:12px 0}
+.shop:first-child{border-top:0}
+.shop h3{margin:0;font-size:1rem}
+.meta{color:var(--mute);font-size:.88rem}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:.8rem;border:1px solid currentColor;margin-inline-start:6px}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.err{color:var(--bad);min-height:1.2em;font-size:.9rem;margin:8px 0 0}
+.small{width:90px;display:inline-block}
+.date{width:150px;display:inline-block}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>لوحة إدارة مخزني</h1>
+
+  <div id="wait" class="card">بيتصل…</div>
+
+  <div id="login" class="card" hidden>
+    <h2>دخول الأدمن</h2>
+    <label for="a-email">الإيميل</label>
+    <input id="a-email" type="email" dir="ltr" autocomplete="username">
+    <label for="a-pass">الباسورد</label>
+    <input id="a-pass" type="password" dir="ltr" autocomplete="current-password">
+    <div class="row"><button class="p" id="a-go" type="button">دخول</button></div>
+    <p class="err" id="a-err"></p>
+  </div>
+
+  <div id="notadmin" class="card" hidden>
+    <p>الحساب ده مش حساب الأدمن.</p>
+    <div class="row"><button id="na-out" type="button">خروج</button></div>
+  </div>
+
+  <div id="panel" hidden>
+    <div class="row" style="justify-content:space-between;margin:0 0 12px">
+      <span class="meta" id="who"></span>
+      <button id="p-out" type="button">خروج</button>
+    </div>
+
+    <div class="card">
+      <h2>إضافة محل جديد</h2>
+      <div class="grid">
+        <div><label for="n-name">اسم المحل</label><input id="n-name" type="text"></div>
+        <div><label for="n-days">مدة الاشتراك (أيام)</label><input id="n-days" type="number" min="1" value="30" inputmode="numeric"></div>
+        <div><label for="n-email">إيميل صاحب المحل (هو اللي هيدخل بيه)</label><input id="n-email" type="email" dir="ltr"></div>
+        <div><label for="n-pass">باسورد مؤقت (6 حروف على الأقل)</label><input id="n-pass" type="text" dir="ltr" autocomplete="off"></div>
+      </div>
+      <label for="n-note">ملاحظة (تليفون العميل مثلا)</label>
+      <input id="n-note" type="text">
+      <div class="row"><button class="p" id="n-go" type="button">إنشاء المحل</button></div>
+      <p class="err" id="n-err"></p>
+    </div>
+
+    <div class="card">
+      <h2>المحلات <span class="meta" id="count"></span></h2>
+      <div id="shops"></div>
+    </div>
+  </div>
+</main>
+
+<script>window.FB_APP_NAME = 'admin';</script>
+<script>
+/* مخزني — الاتصال بـ Firebase.
+   إعدادات الاتصال دي عامة (مش أسرار). الحماية الحقيقية في قواعد Firestore (ملف firestore.rules).
+   الفتح من ملف على الجهاز (file://) أو بإضافة ?local للرابط = الوضع المحلي القديم من غير سحابة. */
+(function(){
+  var CFG = {
+    apiKey: "AIzaSyBHHvaYyh4Z_lhpD2TNW9D_48eO-IAIyzg",
+    authDomain: "makhzani-16e1e.firebaseapp.com",
+    projectId: "makhzani-16e1e",
+    storageBucket: "makhzani-16e1e.firebasestorage.app",
+    messagingSenderId: "24820958119",
+    appId: "1:24820958119:web:c7f9107875f0694848ec82"
+  };
+  var SDK_VERSION = '13.2.0';
+  window.FB_CONFIG = CFG;
+  window.FB_ADMIN_UID = 'dqK2AqfNGIMSlQ6UkWcLPxC32Uh1';
+
+  function fire(n){ try{ window.dispatchEvent(new Event(n)); }catch(e){} }
+
+  /* بديل للاختبار بس */
+  if(window.FB_FAKE){
+    window.FB = window.FB_FAKE; window.CLOUD_ON = true;
+    setTimeout(function(){ fire('fb-ready'); },0);
+    return;
+  }
+  if(location.protocol.indexOf('http')!==0 || /[?&]local\b/.test(location.search)) return;
+
+  window.CLOUD_ON = true;
+  var base = 'https://www.gstatic.com/firebasejs/'+SDK_VERSION+'/';
+  Promise.all([
+    import(base+'firebase-app.js'),
+    import(base+'firebase-auth.js'),
+    import(base+'firebase-firestore.js')
+  ]).then(function(m){
+    var A = m[0], Au = m[1], F = m[2];
+    /* جلسة دخول مستقلة لكل صفحة: الأدمن بيحط FB_APP_NAME عشان ميتشاركش الجلسة مع التطبيق */
+    var app = window.FB_APP_NAME ? A.initializeApp(CFG,window.FB_APP_NAME) : A.initializeApp(CFG);
+    var auth = Au.getAuth(app);
+    var fs = F.getFirestore(app);
+    window.FB = {
+      onUser: function(cb){ return Au.onAuthStateChanged(auth,cb); },
+      user: function(){ return auth.currentUser; },
+      signIn: function(email,pass){
+        return Au.signInWithEmailAndPassword(auth,email,pass).then(function(c){ return c.user; });
+      },
+      reauth: function(pass){
+        var u = auth.currentUser;
+        if(!u || !u.email) return Promise.reject({code:'auth/no-user'});
+        return Au.signInWithEmailAndPassword(auth,u.email,pass).then(function(){ return true; });
+      },
+      signOut: function(){ return Au.signOut(auth); },
+      reset: function(email){ return Au.sendPasswordResetEmail(auth,email); },
+      get: function(path){
+        return F.getDoc(F.doc(fs,path)).then(function(s){ return s.exists() ? s.data() : null; });
+      },
+      set: function(path,data,merge){
+        return merge ? F.setDoc(F.doc(fs,path),data,{merge:true}) : F.setDoc(F.doc(fs,path),data);
+      },
+      list: function(path){
+        return F.getDocs(F.collection(fs,path)).then(function(q){
+          return q.docs.map(function(d){ var v = d.data(); v.id = d.id; return v; });
+        });
+      },
+      newId: function(path){ return F.doc(F.collection(fs,path)).id; },
+      /* إنشاء حساب لعميل من غير ما يتسجّل خروج الأدمن (تطبيق تاني جوه نفس الصفحة) */
+      createUser: function(email,pass){
+        var sec;
+        try{ sec = A.getApp('sec'); }catch(e){ sec = A.initializeApp(CFG,'sec'); }
+        var sa = Au.getAuth(sec);
+        return Au.createUserWithEmailAndPassword(sa,email,pass).then(function(c){
+          var uid = c.user.uid;
+          return Au.signOut(sa).then(function(){ return uid; });
+        });
+      }
+    };
+    fire('fb-ready');
+  }).catch(function(e){
+    window.FB_ERR = e;
+    fire('fb-failed');
+  });
+})();
+
+</script>
+<script>
+(function(){
+  var DAY = 86400000;
+  function $(s){ return document.querySelector(s); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function z(n){ n = String(n); return n.length<2 ? '0'+n : n; }
+  function fmt(ms){ var d = new Date(ms); return z(d.getDate())+'/'+z(d.getMonth()+1)+'/'+d.getFullYear(); }
+  function show(id){ ['wait','login','notadmin','panel'].forEach(function(x){ $('#'+x).hidden = x!==id; }); }
+  function msg(e){
+    var c = (e && e.code) || '';
+    if(c==='auth/invalid-credential' || c==='auth/wrong-password' || c==='auth/user-not-found') return 'الإيميل أو الباسورد غلط.';
+    if(c==='auth/email-already-in-use') return 'الإيميل ده مستخدم قبل كده.';
+    if(c==='auth/invalid-email') return 'الإيميل مش صحيح.';
+    if(c==='auth/weak-password') return 'الباسورد ضعيف (6 حروف على الأقل).';
+    if(c==='auth/unauthorized-domain') return 'العنوان ده مش مسموح في Firebase (Authentication ثم Settings ثم Authorized domains).';
+    if(c==='auth/operation-not-allowed') return 'تسجيل الدخول بالإيميل مش متفعّل في Firebase.';
+    if(c==='auth/network-request-failed' || c==='unavailable') return 'مفيش اتصال بالنت.';
+    if(c==='permission-denied') return 'مفيش صلاحية. اتأكد من قواعد Firestore.';
+    return 'حصلت مشكلة'+(c ? ' ('+c+')' : '')+'.';
+  }
+
+  var shops = [];
+
+  function status(s){
+    var now = Date.now(), left = Math.ceil((s.expiresAt-now)/DAY);
+    if(s.status==='suspended') return {t:'موقوف',c:'bad',left:left};
+    if(!s.expiresAt || s.expiresAt<now) return {t:'منتهي',c:'bad',left:left};
+    if(left<=7) return {t:'قرب يخلص',c:'warn',left:left};
+    return {t:'شغال',c:'ok',left:left};
+  }
+  function render(){
+    shops.sort(function(a,b){ return (a.expiresAt||0)-(b.expiresAt||0); });
+    $('#count').textContent = '('+shops.length+')';
+    $('#shops').innerHTML = shops.length ? shops.map(function(s){
+      var st = status(s);
+      return '<div class="shop" data-id="'+esc(s.id)+'">'+
+        '<h3>'+esc(s.name||'(من غير اسم)')+'<span class="pill '+st.c+'">'+st.t+'</span></h3>'+
+        '<div class="meta" dir="ltr" style="text-align:right">'+esc(s.ownerEmail||'')+'</div>'+
+        '<div class="meta">ينتهي: '+(s.expiresAt ? fmt(s.expiresAt)+' (باقي '+Math.max(st.left,0)+' يوم)' : '—')+(s.note ? ' · '+esc(s.note) : '')+'</div>'+
+        '<div class="row">'+
+          '<button data-act="add" data-n="30">+30 يوم</button><button data-act="add" data-n="90">+90 يوم</button><button data-act="add" data-n="365">+سنة</button>'+
+          '<input class="small" type="number" min="1" placeholder="أيام" data-f="days" inputmode="numeric"><button data-act="addc">زوّد</button>'+
+        '</div>'+
+        '<div class="row">'+
+          '<input class="date" type="date" data-f="date"><button data-act="setdate">حدد التاريخ</button>'+
+          (s.status==='suspended' ? '<button class="p" data-act="resume">رجّع التفعيل</button>' : '<button class="d" data-act="suspend">إيقاف</button>')+
+        '</div>'+
+        '<p class="err" data-f="err"></p>'+
+      '</div>';
+    }).join('') : '<p class="meta">لسه مفيش محلات.</p>';
+  }
+  function load(){
+    return FB.list('shops').then(function(a){ shops = a; render(); },function(e){ $('#shops').innerHTML = '<p class="err">'+esc(msg(e))+'</p>'; });
+  }
+  function patch(id,data,errEl){
+    return FB.set('shops/'+id,data,true).then(function(){
+      shops.forEach(function(s){ if(s.id===id) Object.keys(data).forEach(function(k){ s[k] = data[k]; }); });
+      render();
+    },function(e){ if(errEl) errEl.textContent = msg(e); });
+  }
+
+  $('#shops').addEventListener('click',function(ev){
+    var b = ev.target.closest('button'); if(!b) return;
+    var box = b.closest('.shop'), id = box.getAttribute('data-id'), s = shops.filter(function(x){ return x.id===id; })[0];
+    var err = box.querySelector('[data-f=err]'); err.textContent = '';
+    var act = b.getAttribute('data-act'), now = Date.now();
+    var base = Math.max(now,(s && s.expiresAt) || 0);
+    if(act==='add'){ patch(id,{expiresAt:base+(+b.getAttribute('data-n'))*DAY,status:'active'},err); }
+    else if(act==='addc'){
+      var n = Math.floor(+box.querySelector('[data-f=days]').value);
+      if(!(n>0) || n>3650){ err.textContent = 'اكتب عدد أيام صحيح.'; return; }
+      patch(id,{expiresAt:base+n*DAY,status:'active'},err);
+    } else if(act==='setdate'){
+      var v = box.querySelector('[data-f=date]').value;
+      if(!v){ err.textContent = 'اختار تاريخ.'; return; }
+      var p = v.split('-'); var t = new Date(+p[0],+p[1]-1,+p[2],23,59,59).getTime();
+      patch(id,{expiresAt:t},err);
+    } else if(act==='suspend'){ patch(id,{status:'suspended'},err); }
+    else if(act==='resume'){ patch(id,{status:'active'},err); }
+  });
+
+  $('#n-go').addEventListener('click',function(){
+    var name = $('#n-name').value.trim(), email = $('#n-email').value.trim(), pass = $('#n-pass').value, days = Math.floor(+$('#n-days').value), note = $('#n-note').value.trim(), err = $('#n-err');
+    err.textContent = '';
+    if(!name || !email){ err.textContent = 'اكتب اسم المحل والإيميل.'; return; }
+    if(pass.length<6){ err.textContent = 'الباسورد 6 حروف على الأقل.'; return; }
+    if(!(days>0) || days>3650){ err.textContent = 'اكتب عدد أيام صحيح.'; return; }
+    var btn = $('#n-go'); btn.disabled = true;
+    FB.createUser(email,pass).then(function(uid){
+      var id = FB.newId('shops'), now = Date.now();
+      var shop = {name:name,ownerUid:uid,ownerEmail:email,expiresAt:now+days*DAY,status:'active',createdAt:now,note:note};
+      return FB.set('shops/'+id,shop).then(function(){
+        return FB.set('users/'+uid,{shopId:id,role:'owner',email:email});
+      }).then(function(){
+        shop.id = id; shops.push(shop); render();
+        ['n-name','n-email','n-pass','n-note'].forEach(function(x){ $('#'+x).value = ''; });
+        err.textContent = 'اتعمل المحل. ابعت للعميل الإيميل والباسورد.';
+      });
+    }).then(null,function(e){ err.textContent = msg(e); }).then(function(){ btn.disabled = false; });
+  });
+
+  $('#a-go').addEventListener('click',function(){
+    var e = $('#a-email').value.trim(), p = $('#a-pass').value, err = $('#a-err');
+    err.textContent = '';
+    if(!e || !p){ err.textContent = 'اكتب الإيميل والباسورد.'; return; }
+    FB.signIn(e,p).then(null,function(x){ err.textContent = msg(x); });
+  });
+  $('#a-pass').addEventListener('keydown',function(e){ if(e.key==='Enter') $('#a-go').click(); });
+  function out(){ FB.signOut(); }
+  $('#p-out').addEventListener('click',out);
+  $('#na-out').addEventListener('click',out);
+
+  var booted = false;
+  function boot(){
+    if(booted) return; booted = true;
+    FB.onUser(function(u){
+      if(!u){ show('login'); return; }
+      if(u.uid!==window.FB_ADMIN_UID){ show('notadmin'); return; }
+      $('#who').textContent = u.email;
+      show('panel'); load();
+    });
+  }
+  if(window.FB) boot();
+  window.addEventListener('fb-ready',function(A){ boot(); });
+  window.addEventListener('fb-failed',function(){ $('#wait').textContent = 'مقدرناش نحمّل Firebase. اتأكد من النت أو افتح الصفحة من رابط (مش ملف).'; });
+  if(!window.CLOUD_ON) $('#wait').textContent = 'افتح الصفحة من رابط (Live Server أو الاستضافة)، مش من ملف على الجهاز.';
+})();
+</script>
+</body>
+</html>
